@@ -6,3 +6,64 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+    depends_on:
+      - postgres
+      - minio
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres-local
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: wellmum
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/data
+    networks:
+      - wellmum-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio-local
+    restart: always
+    ports:
+      - '10000:10000' # API S3
+      - '10001:10001' # Console Web UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server --address ":10000" --console-address ":10001" /data
+    networks:
+      - wellmum-network
+
+  createbuckets:
+    image: minio/mc
+    container_name: createbuckets-local
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      echo "⏳ Waiting for MinIO...";
+      until mc alias set myminio http://minio:10000 minioadmin minioadmin; do
+        echo "🔁 Retrying connection to MinIO...";
+        sleep 2;
+      done;
+      
+      echo "✅ MinIO is ready!";
+      mc mb myminio/public || true;
+      mc mb myminio/private || true;
+      mc anonymous set download myminio/public || true;
+      exit 0;"
+    networks:
+      - wellmum-network
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  wellmum-network:
+    driver: bridge
